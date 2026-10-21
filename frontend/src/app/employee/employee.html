@@ -1,0 +1,183 @@
+<main class="page">
+
+  @if (toast(); as t) {
+    <button type="button" class="toast" [class.toast-error]="t.type === 'error'"
+            role="status" (click)="dismissToast()" title="Dismiss">{{ t.text }}</button>
+  }
+
+  <header class="top">
+    <h1>Employee Management</h1>
+    <button type="button" class="btn" (click)="toggleTheme()"
+            [attr.aria-pressed]="theme() === 'dark'" aria-label="Dark mode">
+      {{ theme() === 'dark' ? '☀ Light' : '☾ Dark' }}
+    </button>
+  </header>
+
+  <section class="panel" [class.panel-editing]="editingId()">
+    <h2>
+      @if (editingEmployee(); as emp) { Editing {{ emp.name }} } @else { Add employee }
+    </h2>
+
+    <form [formGroup]="employeeForm" (ngSubmit)="saveEmployee()" class="form">
+
+      <div class="field">
+        <label for="name">Name</label>
+        <input #nameInput id="name" type="text" formControlName="name" placeholder="e.g. Asha Rao"
+               autocomplete="off" [class.invalid]="name?.touched && name?.invalid">
+        <span class="hint">
+          @if (name?.touched && name?.errors?.['required']) { Name is required }
+          @else if (name?.touched && name?.errors?.['minlength']) { Use at least 3 characters }
+        </span>
+      </div>
+
+      <div class="field">
+        <label for="department">Department</label>
+        <input id="department" type="text" formControlName="department" placeholder="e.g. Engineering"
+               autocomplete="off" list="dept-list" [class.invalid]="department?.touched && department?.invalid">
+        <datalist id="dept-list">
+          @for (d of departments(); track d) { <option [value]="d"></option> }
+        </datalist>
+        <span class="hint">
+          @if (department?.touched && department?.invalid) { Department is required }
+        </span>
+      </div>
+
+      <div class="field">
+        <label for="salary">Salary (₹)</label>
+        <input id="salary" type="number" min="1" formControlName="salary" placeholder="e.g. 50000"
+               [class.invalid]="salary?.touched && salary?.invalid">
+        <span class="hint">
+          @if (salary?.touched && salary?.invalid) { Enter a salary above 0 }
+        </span>
+      </div>
+
+      <div class="actions">
+        <button type="submit" class="btn primary" [disabled]="saving()">
+          {{ saving() ? 'Saving…' : (editingId() ? 'Save changes' : 'Add employee') }}
+        </button>
+        @if (editingId()) {
+          <button type="button" class="btn" (click)="resetForm()">Cancel</button>
+        }
+      </div>
+    </form>
+  </section>
+
+  <section class="panel">
+    <div class="list-head">
+      <h2>
+        Employees ({{ visibleEmployees().length }})
+        @if (hasFilters()) { <span class="muted">of {{ employees().length }}</span> }
+      </h2>
+
+      <div class="filters">
+        <select #dept aria-label="Filter by department" (change)="onDepartment(dept.value)">
+          <option value="" [selected]="!departmentFilter()">All departments</option>
+          @for (d of departments(); track d) {
+            <option [value]="d" [selected]="d === departmentFilter()">{{ d }}</option>
+          }
+        </select>
+        <input type="search" class="search" placeholder="Search name or department"
+               aria-label="Search employees" [value]="searchTerm()"
+               (input)="onSearch($any($event.target).value)">
+      </div>
+    </div>
+
+    @if (loading() && employees().length === 0) {
+      <p class="note">Loading employees…</p>
+    } @else if (loadFailed()) {
+      <p class="note note-error">
+        Could not reach the server. Make sure Spring Boot is running on port 8080.
+        <button type="button" class="btn" (click)="loadEmployees()">Try again</button>
+      </p>
+    } @else if (employees().length === 0) {
+      <p class="note">No employees yet. Add the first one using the form above.</p>
+    } @else if (visibleEmployees().length === 0) {
+      <p class="note">
+        No employees match your filters.
+        <button type="button" class="btn" (click)="clearFilters()">Clear filters</button>
+      </p>
+    } @else {
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th [attr.aria-sort]="ariaSort('id')"><button type="button" class="sort" (click)="sortBy('id')">ID {{ sortMark('id') }}</button></th>
+              <th [attr.aria-sort]="ariaSort('name')"><button type="button" class="sort" (click)="sortBy('name')">Name {{ sortMark('name') }}</button></th>
+              <th [attr.aria-sort]="ariaSort('department')"><button type="button" class="sort" (click)="sortBy('department')">Department {{ sortMark('department') }}</button></th>
+              <th class="num" [attr.aria-sort]="ariaSort('salary')"><button type="button" class="sort" (click)="sortBy('salary')">Salary {{ sortMark('salary') }}</button></th>
+              <th class="num">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (employee of pagedEmployees(); track employee.id) {
+              <tr [class.editing]="employee.id === editingId()">
+                <td class="muted">{{ employee.id }}</td>
+                <td>
+                  <span class="person">
+                    <span class="avatar" [style.--h]="hue(employee.name)">{{ initials(employee.name) }}</span>
+                    {{ employee.name }}
+                  </span>
+                </td>
+                <td><span class="badge" [style.--h]="hue(employee.department)">{{ employee.department }}</span></td>
+                <td class="num">{{ employee.salary | currency:'INR':'symbol':'1.0-0' }}</td>
+                <td class="num">
+                  <div class="row-actions">
+                    @if (confirmingId() === employee.id) {
+                      <span class="ask">Delete {{ employee.name }}?</span>
+                      <button type="button" class="btn danger-solid" (click)="deleteEmployee(employee)">Yes, delete</button>
+                      <button type="button" class="btn" (click)="cancelDelete()">Keep</button>
+                    } @else {
+                      <button type="button" class="btn" (click)="editEmployee(employee)">Edit</button>
+                      <button type="button" class="btn danger" (click)="askDelete(employee)">Delete</button>
+                    }
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="3">{{ hasFilters() ? 'Total of matching employees (all pages)' : 'Total payroll (all pages)' }}</td>
+              <td class="num">{{ totalSalary() | currency:'INR':'symbol':'1.0-0' }}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      @if (visibleEmployees().length > pageSizes[0]) {
+        <nav class="pager" aria-label="Pagination">
+          <span class="muted">Showing {{ pageStart() }}–{{ pageEnd() }} of {{ visibleEmployees().length }}</span>
+
+          <label class="per-page">
+            Rows
+            <select #ps aria-label="Rows per page" (change)="setPageSize(ps.value)">
+              @for (n of pageSizes; track n) {
+                <option [value]="n" [selected]="n === pageSize()">{{ n }}</option>
+              }
+            </select>
+          </label>
+
+          @if (totalPages() > 1) {
+            <div class="pages">
+              <button type="button" class="btn" [disabled]="currentPage() === 1"
+                      (click)="goToPage(currentPage() - 1)">Previous</button>
+              @for (p of pageList(); track $index) {
+                @if (p === null) {
+                  <span class="gap">…</span>
+                } @else {
+                  <button type="button" class="btn page" [class.current]="p === currentPage()"
+                          [attr.aria-current]="p === currentPage() ? 'page' : null"
+                          (click)="goToPage(p)">{{ p }}</button>
+                }
+              }
+              <button type="button" class="btn" [disabled]="currentPage() === totalPages()"
+                      (click)="goToPage(currentPage() + 1)">Next</button>
+            </div>
+          }
+        </nav>
+      }
+    }
+  </section>
+
+</main>
